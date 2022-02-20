@@ -1,8 +1,10 @@
 #include <iostream>
 #include <math.h>
+#include <malloc.h>
+#include <stdlib.h>
 
 const int N = 4;
-const double tau = 0.001;
+const double TAU = 0.001;
 const double epsilon = 0.00001;
 
 const int size_buff = 5;
@@ -18,7 +20,7 @@ void Fill_A(double *A) {
     }
 }
 
-void Fill_Vector(double *x) {
+void FillVector(double *x) {
     for (int i = 0; i < N; i++) {
         x[i] = rand() / (double)RAND_MAX * 200 - 100;
     }
@@ -102,12 +104,11 @@ int main() {
     std::cout << "matrix A:" << std::endl;
     PrintMatrix(A, N * N);
 
-    Fill_Vector(b);
+    FillVector(b);
     std::cout << "vector b:" << std::endl;
     PrintMatrix(b, N);
     double module_b = CalcModuleOfVector(b);
 
-    //Fill_Vector(x);
     std::cout << "vector x_0:" << std::endl;
     PrintMatrix(x, N);
 
@@ -131,7 +132,7 @@ int main() {
         if (SumBuff(buffer) == size_buff) {
             break;
         }
-        MulScalarAndVector(tau, tmp, tmp);
+        MulScalarAndVector(TAU, tmp, tmp);
         SubVectors(x, tmp, x);
         std::cout << "vector x:" << std::endl;
         PrintMatrix(x, N);
