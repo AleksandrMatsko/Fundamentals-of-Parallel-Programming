@@ -43,6 +43,12 @@ void SubVectors(double *vector_1, double *vector_2, int len, double *res) {
     }
 }
 
+void SumVectors(double *vector_1, double *vector_2, int len, double *res) {
+    for (int i = 0; i < len; i++) {
+        res[i] = vector_1[i] + vector_2[i];
+    }
+}
+
 void MulScalarAndVector(double scalar, double *vector, int len,  double *res) {
     for (int i = 0; i < len; i++) {
         res[i] = vector[i] * scalar;
@@ -50,9 +56,11 @@ void MulScalarAndVector(double scalar, double *vector, int len,  double *res) {
 }
 
 void CalcTMP(double *A, int num_of_strings, double *x, double *b, int shift, double *tmp) {
+    double *v = (double *)calloc(N, sizeof(double));
     for (int i = 0; i < num_of_strings; i++) {
-        tmp[i] = ScalarProduct(&A[i * N], x, N);
-        tmp[i] -= b[shift + i];
+	MulScalarAndVector(x[i], &A[i * N], N, v);
+	SumVectors(v, tmp, N, tmp);
+	tmp[shift + i] -= b[i];
     }
 }
 
@@ -139,14 +147,15 @@ int main(int argc, char **argv) {
     } 
 
     double *A = (double *)calloc(N * strings_in_tasks[rank], sizeof(double));
-    double *b = (double *)calloc(N, sizeof(double));
+    double *b = (double *)calloc(strings_in_tasks[rank], sizeof(double));
     double module_b = 0;
 
     double *full_matrix_A = (double *)calloc(N * N, sizeof(double));
+    double *full_b = (double *)calloc(N, sizeof(double));
     
     if (rank == 0) {
 	Fill_A(full_matrix_A, in);
-	Fill_b(b, in);
+	Fill_b(full_b, in);
 	fclose(in);
     }
     
@@ -155,29 +164,32 @@ int main(int argc, char **argv) {
         to_send[i] = N * strings_in_tasks[i]; 
     }
     MPI_Scatterv(full_matrix_A, to_send, shifts, MPI_DOUBLE, A, N * strings_in_tasks[rank], MPI_DOUBLE, 0, MPI_COMM_WORLD);
-    MPI_Bcast(b, N, MPI_DOUBLE, 0, MPI_COMM_WORLD);
+    MPI_Scatterv(full_b, strings_in_tasks, shifts_in_x, MPI_DOUBLE, b, strings_in_tasks[rank], MPI_DOUBLE, 0, MPI_COMM_WORLD);
     
     free(full_matrix_A);
+    free(full_b);
     free(to_send);
     
-    double *x = (double *)calloc(N, sizeof(double));
+    double *x = (double *)calloc(strings_in_tasks[rank], sizeof(double));
     int *buffer = (int *)calloc(BUFF_SIZE, sizeof(int));
     int buff_counter = 0;
-    double *tmp = (double *)calloc(strings_in_tasks[rank], sizeof(double));
+    double *tmp = (double *)calloc(N, sizeof(double));
+    double *full_vec = (double *)calloc(N, sizeof(double));
     unsigned int iteration = 0;
     double g_x = 0;
 
     double start_time = MPI_Wtime();
-    double part_module_b = ScalarProduct(&b[shifts_in_x[rank]], &b[shifts_in_x[rank]], strings_in_tasks[rank]);
+    double part_module_b = ScalarProduct(b, b, strings_in_tasks[rank]);
     MPI_Allreduce(&part_module_b, &module_b, 1, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
     double exit_val = EPSILON * EPSILON * module_b; 
 
     while (iteration < MAX_ITERATIONS) {
 	double module_tmp = 0;
         CalcTMP(A, strings_in_tasks[rank], x, b, shifts_in_x[rank], tmp);
-	double tmp_val = ScalarProduct(tmp, tmp, strings_in_tasks[rank]);
-        MPI_Allreduce(&tmp_val, &module_tmp, 1, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
-	
+	MPI_Allreduce(tmp, full_vec, N, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
+	double tmp_val = ScalarProduct(&full_vec[shifts_in_x[rank]], &full_vec[shifts_in_x[rank]], strings_in_tasks[rank]);
+	MPI_Allreduce(&tmp_val, &module_tmp, 1, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD); 
+	
 	g_x = module_tmp / module_b;
         if (module_tmp < exit_val) {
             buffer[buff_counter] = 1;
@@ -190,16 +202,16 @@ int main(int argc, char **argv) {
             break;
         }
 
-        MulScalarAndVector(TAU, tmp, strings_in_tasks[rank], tmp);
-        SubVectors(&x[shifts_in_x[rank]], tmp, strings_in_tasks[rank], tmp);
-        MPI_Allgatherv(tmp, strings_in_tasks[rank], MPI_DOUBLE, x, strings_in_tasks, shifts_in_x, MPI_DOUBLE, MPI_COMM_WORLD);
-	ZeroVector(tmp, strings_in_tasks[rank]);
+        MulScalarAndVector(TAU, &full_vec[shifts_in_x[rank]], strings_in_tasks[rank], &full_vec[shifts_in_x[rank]]);
+        SubVectors(x, &full_vec[shifts_in_x[rank]], strings_in_tasks[rank], x);
+        ZeroVector(full_vec, N);
+	ZeroVector(tmp, N);
         iteration += 1;
     }
     
     double end_time = MPI_Wtime();
     if (rank == 0) {
-	std::cout << "Parallel 1" << std::endl;
+	std::cout << "Parallel 2" << std::endl;
 	std::cout << "size = " << size << std::endl;
         if (iteration == MAX_ITERATIONS) {
             std::cout << "solution wasn't find after " << MAX_ITERATIONS << " iterations" << std::endl;
@@ -216,6 +228,7 @@ int main(int argc, char **argv) {
     free(strings_in_tasks);
     free(buffer);
     free(tmp);
+    free(full_vec);
     free(A);
     free(x);
     free(b);
