@@ -6,7 +6,7 @@
 int N = 200;
 double TAU = 0.0000001;
 double EPSILON = 0.000001;
-unsigned int MAX_ITERATIONS = 1000000;
+const unsigned int MAX_ITERATIONS = 1000000;
 const int MAX_NUM_CHECKS = 5;
 
 void Fill_A(double *A, int N, FILE *in) {
@@ -22,7 +22,6 @@ void Fill_b(double *b, int N, FILE *in) {
 }
 
 void MulMatrixVector(double *matrix, double *vector, double *res) {
-#pragma omp for
     for (int i = 0; i < N; i++) {
         res[i] = 0;
         for (int j = 0; j < N; j++) {
@@ -41,14 +40,12 @@ void MulMatrixVector(double *matrix, double *vector, double *res) {
 }*/
 
 void SubVectors(const double *vector_1, const double *vector_2, double *res) {
-#pragma omp for
     for (int i = 0; i < N; i++) {
         res[i] = vector_1[i] - vector_2[i];
     }
 }
 
 void MulScalarAndVector(double scalar, const double *vector, double *res) {
-#pragma omp for
     for (int i = 0; i < N; i++) {
         res[i] = vector[i] * scalar;
     }
@@ -73,23 +70,7 @@ void PrintMatrix(double *matrix, size_t size) {
     std::cout << std::endl;
 }
 
-int SumBuff(int *buff) {
-    int res = 0;
-    for (int i = 0; i < MAX_NUM_CHECKS; i++) {
-        res += buff[i];
-    }
-    return res;
-}
-
-void ZeroBuff(int *buff) {
-#pragma omp for
-    for (int i = 0; i < MAX_NUM_CHECKS; i++) {
-       buff[i] = 0;
-    }
-}
-
 void ZeroVector(double *vector) {
-#pragma omp for
     for (int i = 0; i < N; i++) {
         vector[i] = 0;
     }
@@ -110,28 +91,34 @@ int main(int argc, char **argv) {
     
     Fill_A(A, N, in);
     Fill_b(b, N, in);
-    
-    int check_counter = 0;
-    unsigned int iteration = 0;
+
     unsigned int last_iteration = 0;
     double g_x = 0;
 
     int n = atoi(argv[1]);
 
     double start = omp_get_wtime();
-    double module_b;
-    double module_tmp;
-    #pragma omp parallel num_threads(n) firstprivate(iteration, MAX_NUM_CHECKS, MAX_ITERATIONS, check_counter)
+    double module_b = 0;
+    double module_tmp = 0;
+    #pragma omp parallel num_threads(n) shared(A, b, x, tmp, module_tmp, module_b)
     {
-        module_b = 0;
+        int check_counter = 0;
+        unsigned int iteration = 0;
         #pragma omp for reduction(+: module_b)
         for (int i = 0; i < N; i++) {
             module_b += b[i] * b[i];
         }
         double exit_val = EPSILON * EPSILON * module_b;
         while (check_counter < MAX_NUM_CHECKS && iteration < MAX_ITERATIONS) {
-            CalcTMP(A, x, b, tmp);
-            module_tmp = 0;
+            //CalcTMP(A, x, b, tmp);
+            #pragma omp for
+            for (int i = 0; i < N; i++) {
+                tmp[i] = 0;
+                for (int j = 0; j < N; j++) {
+                    tmp[i] += A[i * N + j] * x[j];
+                }
+                tmp[i] -= b[i];
+            }
             #pragma omp for reduction(+: module_tmp)
             for (int i = 0; i < N; i++) {
                 module_tmp += tmp[i] * tmp[i];
@@ -144,15 +131,20 @@ int main(int argc, char **argv) {
             } else {
                 check_counter = 0;
             }
-            MulScalarAndVector(TAU, tmp, tmp);
-            SubVectors(x, tmp, x);
-            ZeroVector(tmp);
-            //#pragma omp atomic
+            //MulScalarAndVector(TAU, tmp, tmp);
+            //SubVectors(x, tmp, x);
+            //ZeroVector(tmp);
+            #pragma omp for
+            for (int i = 0; i < N; i++) {
+                tmp[i] *= TAU;
+                x[i] -= tmp[i];
+                tmp[i] = 0;
+            }
+            module_tmp = 0;
             iteration += 1;
-            /*if (iteration % 1000 == 0) {
+            if (iteration % 1000 == 0) {
                 std::cerr << iteration << " g(x) = " << g_x << std::endl;
-            }*/
-            #pragma omp barrier
+            }
         }
     };
     double end = omp_get_wtime();
@@ -163,7 +155,7 @@ int main(int argc, char **argv) {
 	    std::cout << "g(x) = " << g_x << std::endl;
     }
     else {
-	    std::cout << "!!!Solution was found after " << last_iteration << " iteratons!!!" << std::endl;
+	    std::cout << "!!!Solution was found!!!" << std::endl;
     }
     std::cout << "Time taken: " << end - start << " sec" << std::endl << std::endl;
     
@@ -171,6 +163,5 @@ int main(int argc, char **argv) {
     free(x);
     free(b);
     free(tmp);
-    //free(buffer);
     return 0;
 }

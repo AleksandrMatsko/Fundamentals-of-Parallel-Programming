@@ -7,8 +7,8 @@
 int N = 200;
 double TAU = 0.0000001;
 double EPSILON = 0.000001;
-unsigned int MAX_ITERATIONS = 1000000;
-const int MAX_NUM_CHEKS= 5;
+const unsigned int MAX_ITERATIONS = 1000000;
+const int MAX_NUM_CHECKS= 5;
 
 void Fill_A(double *A, int N, FILE *in) {
     for (int i = 0; i < N * N; i++) {
@@ -69,20 +69,6 @@ void PrintMatrix(double *matrix, size_t size) {
     std::cout << std::endl;
 }
 
-int SumBuff(int *buff) {
-    int res = 0;
-    for (int i = 0; i < MAX_NUM_CHEKS; i++) {
-        res += buff[i];
-    }
-    return res;
-}
-
-void ZeroBuff(int *buff) {
-    for (int i = 0; i < MAX_NUM_CHEKS; i++) {
-       buff[i] = 0;
-    }
-}
-
 void ZeroVector(double *vector) {
     for (int i = 0; i < N; i++) {
         vector[i] = 0;
@@ -107,8 +93,9 @@ int main() {
     unsigned int iteration = 0;
     double g_x = 0;
 
-    //clock_gettime(CLOCK_MONOTONIC_RAW, &start);
+    clock_gettime(CLOCK_MONOTONIC_RAW, &start);
     double module_b = CalcModuleOfVector(b);
+    std::cerr << "module b = " << module_b << std::endl;
     double exit_val = EPSILON * EPSILON * module_b;
     while (iteration < MAX_ITERATIONS) {
         CalcTMP(A, x, b, tmp);
@@ -120,7 +107,7 @@ int main() {
         else {
             check_counter = 0;
         }
-        if (check_counter == MAX_NUM_CHEKS) {
+        if (check_counter == MAX_NUM_CHECKS) {
             break;
         }
         MulScalarAndVector(TAU, tmp, tmp);
@@ -131,17 +118,17 @@ int main() {
             std::cerr << iteration << " g(x) = " << g_x << std::endl;
         }
     }
-    //clock_gettime(CLOCK_MONOTONIC_RAW, &end);
+    clock_gettime(CLOCK_MONOTONIC_RAW, &end);
 
-    std::cerr << "Without OpenMP:" << std::endl;
+    std::cout << "Without OpenMP:" << std::endl;
     if (iteration == MAX_ITERATIONS) {
-	std::cerr << "Solution wasn't found after " << iteration << " iterations" << std::endl;
-	std::cerr << "g(x) = " << g_x << std::endl;
+	std::cout << "Solution wasn't found after " << iteration << " iterations" << std::endl;
+	std::cout << "g(x) = " << g_x << std::endl;
     }
     else {
-	std::cerr << "!!!Solution was found after " << iteration << " iteratons!!!" << std::endl;
+	std::cout << "!!!Solution was found!!!" << std::endl;
     }
-    std::cerr << "Time taken: " << end.tv_sec-start.tv_sec + 0.000000001 * (end.tv_nsec-start.tv_nsec) << " sec" << std::endl;;
+    std::cout << "Time taken: " << end.tv_sec-start.tv_sec + 0.000000001 * (end.tv_nsec-start.tv_nsec) << " sec" << std::endl << std::endl;
     
     free(A);
     free(x);
