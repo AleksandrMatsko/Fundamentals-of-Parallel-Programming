@@ -95,7 +95,6 @@ int main() {
 
     clock_gettime(CLOCK_MONOTONIC_RAW, &start);
     double module_b = CalcModuleOfVector(b);
-    std::cerr << "module b = " << module_b << std::endl;
     double exit_val = EPSILON * EPSILON * module_b;
     while (iteration < MAX_ITERATIONS) {
         CalcTMP(A, x, b, tmp);
@@ -114,9 +113,6 @@ int main() {
         SubVectors(x, tmp, x);
         ZeroVector(tmp);
 	    iteration += 1;
-        if (iteration % 1000 == 0) {
-            std::cerr << iteration << " g(x) = " << g_x << std::endl;
-        }
     }
     clock_gettime(CLOCK_MONOTONIC_RAW, &end);
 

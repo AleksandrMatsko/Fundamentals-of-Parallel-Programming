@@ -11,7 +11,7 @@ const int MAX_NUM_CHECKS = 5;
 
 void Fill_A(double *A, int N, FILE *in) {
     for (int i = 0; i < N * N; i++) {
-	fscanf(in, "%lf", &A[i]);
+        fscanf(in, "%lf", &A[i]);
     }
 }
 
@@ -77,7 +77,7 @@ void ZeroVector(double *vector) {
 }
 
 int main(int argc, char **argv) {
-    if (argc != 2) {
+    if (argc != 3) {
         std::cerr << "Not enough arguments" << std::endl;
         return 0;
     }
@@ -88,14 +88,15 @@ int main(int argc, char **argv) {
     double *x = (double *)calloc(N, sizeof(double));
     double *b = (double *)calloc(N, sizeof(double));
     double *tmp = (double *)calloc(N, sizeof(double));
-    
+
     Fill_A(A, N, in);
     Fill_b(b, N, in);
 
     unsigned int last_iteration = 0;
     double g_x = 0;
 
-    int n = atoi(argv[1]);
+    const int n = atoi(argv[1]);
+    const int param = atoi(argv[2]);
 
     double start = omp_get_wtime();
     double module_b = 0;
@@ -104,14 +105,14 @@ int main(int argc, char **argv) {
     {
         int check_counter = 0;
         unsigned int iteration = 0;
-        #pragma omp for reduction(+: module_b)
+        #pragma omp for reduction(+: module_b) schedule(static, param)
         for (int i = 0; i < N; i++) {
             module_b += b[i] * b[i];
         }
         double exit_val = EPSILON * EPSILON * module_b;
         while (check_counter < MAX_NUM_CHECKS && iteration < MAX_ITERATIONS) {
             //CalcTMP(A, x, b, tmp);
-            #pragma omp for
+            #pragma omp for schedule(static, param)
             for (int i = 0; i < N; i++) {
                 tmp[i] = 0;
                 for (int j = 0; j < N; j++) {
@@ -119,7 +120,7 @@ int main(int argc, char **argv) {
                 }
                 tmp[i] -= b[i];
             }
-            #pragma omp for reduction(+: module_tmp)
+            #pragma omp for reduction(+: module_tmp) schedule(static, param)
             for (int i = 0; i < N; i++) {
                 module_tmp += tmp[i] * tmp[i];
             }
@@ -134,31 +135,29 @@ int main(int argc, char **argv) {
             //MulScalarAndVector(TAU, tmp, tmp);
             //SubVectors(x, tmp, x);
             //ZeroVector(tmp);
-            #pragma omp for
+            #pragma omp for schedule(static, param)
             for (int i = 0; i < N; i++) {
                 tmp[i] *= TAU;
                 x[i] -= tmp[i];
                 tmp[i] = 0;
             }
-            module_tmp = 0;
             iteration += 1;
-            if (iteration % 1000 == 0) {
-                std::cerr << iteration << " g(x) = " << g_x << std::endl;
-            }
+            #pragma omp single
+            module_tmp = 0;
         }
     };
     double end = omp_get_wtime();
 
-    std::cout << "With OpenMP" << std::endl;
+    std::cout << "With OpenMP threads = " << n << std::endl;
     if (last_iteration == MAX_ITERATIONS) {
-	    std::cout << "Solution wasn't found after " << MAX_ITERATIONS << " iterations" << std::endl;
-	    std::cout << "g(x) = " << g_x << std::endl;
+        std::cout << "Solution wasn't found after " << MAX_ITERATIONS << " iterations" << std::endl;
+        std::cout << "g(x) = " << g_x << std::endl;
     }
     else {
-	    std::cout << "!!!Solution was found!!!" << std::endl;
+        std::cout << "!!!Solution was found!!!" << std::endl;
     }
     std::cout << "Time taken: " << end - start << " sec" << std::endl << std::endl;
-    
+
     free(A);
     free(x);
     free(b);
