@@ -30,9 +30,9 @@ void MulMatrix(double *A, double *B, double *C) {
 void PrintMatrix(double *matrix, int lines, int columns) {
     for (int i = 0; i < lines; i++) {
         for (int j = 0; j < columns; j++) {
-            std::cout << matrix[i * columns + j] << " ";
+            std::cerr << matrix[i * columns + j] << " ";
         }
-        std::cout << std::endl;
+        std::cerr << std::endl;
     }
 }
 
@@ -79,7 +79,6 @@ int main(int argc, char **argv) {
     fclose(in);
     double *A_part = (double *)calloc(N / LINES_LATTICE * M, sizeof(double));
     MPI_Scatter(A, M * N / LINES_LATTICE, MPI_DOUBLE, A_part, M * N / LINES_LATTICE, MPI_DOUBLE, 0, COMM_VERTICAL);
-    free(A);
     MPI_Bcast(A_part, M * N / LINES_LATTICE, MPI_DOUBLE, 0, COMM_HORIZONTAL);
 
     MPI_Datatype B_TYPE;
@@ -94,23 +93,21 @@ int main(int argc, char **argv) {
         int rank_receive;
         coords_to_receive[1] = i;
         MPI_Cart_rank(COMM_2D, coords_to_receive, &rank_receive);
-        //std::cerr << rank_receive << std::endl;
         if (coords[0] == 0 && coords[1] == 0) {
             MPI_Send(&B[i * K / COLUMNS_LATTICE], 1, B_TYPE, rank_receive, i, COMM_2D);
         }
-        else if (coords[0] == 0 && coords[1] == coords_to_receive[1]) {
-            MPI_Recv(B_part, M * K / COLUMNS_LATTICE, MPI_DOUBLE, root, i, COMM_2D, MPI_STATUS_IGNORE);
-        }
+    }
+    if (coords[0] == 0 && coords[1] != 0) {
+        MPI_Recv(B_part, M * K / COLUMNS_LATTICE, MPI_DOUBLE, root, coords[1], COMM_2D, MPI_STATUS_IGNORE);
     }
     if (coords[0] == 0 && coords[1] == 0) {
         for (int i = 0; i < M; i++) {
             memcpy(&B_part[i * K / COLUMNS_LATTICE], &B[i * K], K / COLUMNS_LATTICE * sizeof(double));
         }
     }
-    free(B);
     MPI_Bcast(B_part, M * K / COLUMNS_LATTICE, MPI_DOUBLE, 0, COMM_VERTICAL);
 
-    double *C_part = (double *)calloc(N / LINES_LATTICE * M / COLUMNS_LATTICE, sizeof(double));
+    double *C_part = (double *)calloc(N / LINES_LATTICE * K / COLUMNS_LATTICE, sizeof(double));
     MulMatrix(A_part, B_part, C_part);
 
     MPI_Datatype C_TYPE;
@@ -118,13 +115,14 @@ int main(int argc, char **argv) {
     MPI_Type_commit(&C_TYPE);
 
     double *C = (double *)calloc(N * K, sizeof(double));
+
+    if (rank != root) {
+        MPI_Send(C_part, N / LINES_LATTICE * K / COLUMNS_LATTICE, MPI_DOUBLE, root, rank, COMM_2D);
+    }
     int coords_src[2] = {0, 0};
     for (int i = 0; i < LINES_LATTICE; i++) {
         for (int j = 0; j < COLUMNS_LATTICE; j++) {
-            if (rank != root) {
-                MPI_Send(C_part, N / LINES_LATTICE * K / COLUMNS_LATTICE, MPI_DOUBLE, root, rank, COMM_2D);
-            }
-            else if (i != 0 || j != 0 && rank == root) {
+            if ((i != 0 || j != 0) && rank == root) {
                 int rank_src;
                 coords_src[0] = i;
                 coords_src[1] = j;
@@ -141,6 +139,8 @@ int main(int argc, char **argv) {
     }
 
     free(C);
+    free(B);
+    free(A);
     free(B_part);
     free(A_part);
     free(C_part);
