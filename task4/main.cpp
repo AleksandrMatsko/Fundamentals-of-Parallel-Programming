@@ -3,6 +3,8 @@
 #include <stdbool.h>
 #include <mpi.h>
 #include <malloc.h>
+#include <string.h>
+#include <limits.h>
 
 int NUM_LINES;
 int NUM_COLUMNS;
@@ -29,20 +31,18 @@ u_int setBit(u_int line, u_int index, u_int val) {
 
 void printUINT(u_int num) {
     for (int i = 0; i < sizeof(u_int) * 8; i++) {
-        std::cout << ((num >> i) & 1);
+        std::cerr << ((num >> i) & 1);
     }
-    //printf("\n");
 }
 
 void init(u_int *stage) {
     stage[0] = setBit(stage[0], 1, 1);
     stage[NUM_UINTS] = setBit(stage[NUM_UINTS], 2, 1);
     stage[2 * NUM_UINTS] = setBit(stage[2 * NUM_UINTS], 0, 7);
-
 }
 
 void calcNextStageCenter(u_int *stage, u_int *next_stage, int num_lines) {
-    for (int i = 1; i < num_lines; i++) {
+    for (int i = 1; i < num_lines - 1; i++) {
         for (int j = 0; j < NUM_COLUMNS; j++) {
             /*
              *      order of checking neighbours
@@ -52,70 +52,76 @@ void calcNextStageCenter(u_int *stage, u_int *next_stage, int num_lines) {
              *      6 7 8
              */
             u_int num_alive = 0;
-            num_alive += getBit(stage[i * NUM_UINTS + (j + NUM_COLUMNS + 1) % NUM_COLUMNS / UINT_BIT_SIZE],
+            num_alive += getBit(stage[i * NUM_UINTS + (j + 1) * (j != NUM_COLUMNS - 1) / UINT_BIT_SIZE],
                                 (j + 1) * (j != NUM_COLUMNS - 1) % UINT_BIT_SIZE);
-            num_alive += getBit(stage[i * NUM_UINTS + (j + NUM_COLUMNS - 1) % NUM_COLUMNS / UINT_BIT_SIZE],
-                                (j + UINT_BIT_SIZE - 1 + (!j) * NUM_COLUMNS) % UINT_BIT_SIZE);
+            num_alive += getBit(stage[i * NUM_UINTS + (j - 1 + (!j) * NUM_COLUMNS) / UINT_BIT_SIZE],
+                                (j - 1 + (!j) * NUM_COLUMNS) % UINT_BIT_SIZE);
 
-            num_alive += getBit(stage[(i - 1) * NUM_UINTS + (j + NUM_COLUMNS - 1) % NUM_COLUMNS / UINT_BIT_SIZE],
-                                (j + UINT_BIT_SIZE - 1 + (!j) * NUM_COLUMNS) % UINT_BIT_SIZE);
+            num_alive += getBit(stage[(i - 1) * NUM_UINTS + (j - 1 + (!j) * NUM_COLUMNS) / UINT_BIT_SIZE],
+                                (j - 1 + (!j) * NUM_COLUMNS) % UINT_BIT_SIZE);
             num_alive += getBit(stage[(i - 1) * NUM_UINTS + j / UINT_BIT_SIZE],
                                 j % UINT_BIT_SIZE);
-            num_alive += getBit(stage[(i - 1) * NUM_UINTS + (j + 1) / UINT_BIT_SIZE],
+            num_alive += getBit(stage[(i - 1) * NUM_UINTS + (j + 1) * (j != NUM_COLUMNS - 1) / UINT_BIT_SIZE],
                                 (j + 1) * (j != NUM_COLUMNS - 1) % UINT_BIT_SIZE);
 
-            num_alive += getBit(stage[(i + 1) * NUM_UINTS + (j + NUM_COLUMNS - 1) % NUM_COLUMNS / UINT_BIT_SIZE],
-                                (j + UINT_BIT_SIZE - 1 + (!j) * NUM_COLUMNS) % UINT_BIT_SIZE);
+            num_alive += getBit(stage[(i + 1) * NUM_UINTS + (j - 1 + (!j) * NUM_COLUMNS) / UINT_BIT_SIZE],
+                                (j - 1 + (!j) * NUM_COLUMNS) % UINT_BIT_SIZE);
             num_alive += getBit(stage[(i + 1) * NUM_UINTS + j / UINT_BIT_SIZE],
                                 j % UINT_BIT_SIZE);
-            num_alive += getBit(stage[(i + 1) * NUM_UINTS + (j + 1) / UINT_BIT_SIZE],
+            num_alive += getBit(stage[(i + 1) * NUM_UINTS + (j + 1) * (j != NUM_COLUMNS - 1) / UINT_BIT_SIZE],
                                 (j +  1) * (j != NUM_COLUMNS - 1) % UINT_BIT_SIZE);
 
             u_int bit = getBit(stage[i * NUM_UINTS + j / UINT_BIT_SIZE], j % UINT_BIT_SIZE);
             if ((num_alive < 2 || num_alive > 3) && bit == 1) {
-                next_stage[i * NUM_UINTS + j / UINT_BIT_SIZE] = setBit(next_stage[i * NUM_UINTS + j / UINT_BIT_SIZE], j % UINT_BIT_SIZE, 0);
+                next_stage[i * NUM_UINTS + j / UINT_BIT_SIZE] = setBit(next_stage[i * NUM_UINTS + j / UINT_BIT_SIZE],
+                                                                       j % UINT_BIT_SIZE, 0);
             }
             else if (num_alive == 3 && bit == 0) {
-                next_stage[i * NUM_UINTS + j / UINT_BIT_SIZE] = setBit(next_stage[i * NUM_UINTS + j / UINT_BIT_SIZE], j % UINT_BIT_SIZE, 1);
+                next_stage[i * NUM_UINTS + j / UINT_BIT_SIZE] = setBit(next_stage[i * NUM_UINTS + j / UINT_BIT_SIZE],
+                                                                       j % UINT_BIT_SIZE, 1);
             }
             else {
-                next_stage[i * NUM_UINTS + j / UINT_BIT_SIZE] = setBit(next_stage[i * NUM_UINTS + j / UINT_BIT_SIZE], j % UINT_BIT_SIZE, bit);
+                next_stage[i * NUM_UINTS + j / UINT_BIT_SIZE] = setBit(next_stage[i * NUM_UINTS + j / UINT_BIT_SIZE],
+                                                                       j % UINT_BIT_SIZE, bit);
             }
         }
     }
 }
 
-void calcNextStageUp(u_int *stage, u_int *next_stage, int num_lines, u_int *cells_up) {
+void calcNextStageUp(u_int *stage, u_int *next_stage, u_int *cells_up) {
     for (int j = 0; j < NUM_COLUMNS; j++) {
         u_int num_alive = 0;
-        num_alive += getBit(stage[(j + NUM_COLUMNS + 1) % NUM_COLUMNS / UINT_BIT_SIZE],
+        num_alive += getBit(stage[(j + 1) * (j != NUM_COLUMNS - 1) / UINT_BIT_SIZE],
                             (j + 1) * (j != NUM_COLUMNS - 1) % UINT_BIT_SIZE);
-        num_alive += getBit(stage[(j + NUM_COLUMNS - 1) % NUM_COLUMNS / UINT_BIT_SIZE],
-                            (j + UINT_BIT_SIZE - 1 + (!j) * NUM_COLUMNS) % UINT_BIT_SIZE);
+        num_alive += getBit(stage[(j - 1 + (!j) * NUM_COLUMNS) / UINT_BIT_SIZE],
+                            (j - 1 + (!j) * NUM_COLUMNS) % UINT_BIT_SIZE);
 
-        num_alive += getBit(cells_up[(j + NUM_COLUMNS - 1) % NUM_COLUMNS / UINT_BIT_SIZE],
-                            (j + UINT_BIT_SIZE - 1 + (!j) * NUM_COLUMNS) % UINT_BIT_SIZE);
-        num_alive += getBit(cells_up[(j + NUM_COLUMNS - 1) % NUM_COLUMNS / UINT_BIT_SIZE],
-                            (j + UINT_BIT_SIZE - 1 + (!j) * NUM_COLUMNS) % UINT_BIT_SIZE);
-        num_alive += getBit(cells_up[(j + NUM_COLUMNS - 1) % NUM_COLUMNS / UINT_BIT_SIZE],
-                            (j +  1) * (j != NUM_COLUMNS - 1) % UINT_BIT_SIZE);
+        num_alive += getBit(cells_up[(j - 1 + (!j) * NUM_COLUMNS) / UINT_BIT_SIZE],
+                            (j - 1 + (!j) * NUM_COLUMNS) % UINT_BIT_SIZE);
+        num_alive += getBit(cells_up[j / UINT_BIT_SIZE],
+                            j % UINT_BIT_SIZE);
+        num_alive += getBit(cells_up[(j + 1) * (j != NUM_COLUMNS - 1) / UINT_BIT_SIZE],
+                            (j + 1) * (j != NUM_COLUMNS - 1) % UINT_BIT_SIZE);
 
-        num_alive += getBit(stage[NUM_UINTS + (j + NUM_COLUMNS - 1) % NUM_COLUMNS / UINT_BIT_SIZE],
+        num_alive += getBit(stage[NUM_UINTS + (j - 1 + (!j) * NUM_COLUMNS) / UINT_BIT_SIZE],
                             (j + UINT_BIT_SIZE - 1 + (!j) * NUM_COLUMNS) % UINT_BIT_SIZE);
         num_alive += getBit(stage[NUM_UINTS + j / UINT_BIT_SIZE],
                             j % UINT_BIT_SIZE);
-        num_alive += getBit(stage[NUM_UINTS + (j + 1) / UINT_BIT_SIZE],
-                            j % UINT_BIT_SIZE);
+        num_alive += getBit(stage[NUM_UINTS + (j + 1) * (j != NUM_COLUMNS - 1) / UINT_BIT_SIZE],
+                            (j + 1) * (j != NUM_COLUMNS - 1) % UINT_BIT_SIZE);
 
         u_int bit = getBit(stage[j / UINT_BIT_SIZE], j % UINT_BIT_SIZE);
         if ((num_alive < 2 || num_alive > 3) && bit == 1) {
-            next_stage[j / UINT_BIT_SIZE] = setBit(next_stage[j / UINT_BIT_SIZE], j % UINT_BIT_SIZE, 0);
+            next_stage[j / UINT_BIT_SIZE] = setBit(next_stage[j / UINT_BIT_SIZE],
+                                                   j % UINT_BIT_SIZE, 0);
         }
         else if (num_alive == 3 && bit == 0) {
-            next_stage[j / UINT_BIT_SIZE] = setBit(next_stage[j / UINT_BIT_SIZE], j % UINT_BIT_SIZE, 1);
+            next_stage[j / UINT_BIT_SIZE] = setBit(next_stage[j / UINT_BIT_SIZE],
+                                                   j % UINT_BIT_SIZE, 1);
         }
         else {
-            next_stage[j / UINT_BIT_SIZE] = setBit(next_stage[j / UINT_BIT_SIZE], j % UINT_BIT_SIZE, bit);
+            next_stage[j / UINT_BIT_SIZE] = setBit(next_stage[j / UINT_BIT_SIZE],
+                                                   j % UINT_BIT_SIZE, bit);
         }
     }
 }
@@ -123,34 +129,37 @@ void calcNextStageUp(u_int *stage, u_int *next_stage, int num_lines, u_int *cell
 void calcNextStageDown(u_int *stage, u_int *next_stage, int num_lines, u_int *cells_down) {
     for (int j = 0; j < NUM_COLUMNS; j++) {
         u_int num_alive = 0;
-        num_alive += getBit(stage[(j + NUM_COLUMNS + 1) % NUM_COLUMNS / UINT_BIT_SIZE],
+        num_alive += getBit(stage[(num_lines - 1) * NUM_UINTS + (j + 1) * (j != NUM_COLUMNS - 1) / UINT_BIT_SIZE],
                             (j + 1) * (j != NUM_COLUMNS - 1) % UINT_BIT_SIZE);
-        num_alive += getBit(stage[(j + NUM_COLUMNS - 1) % NUM_COLUMNS / UINT_BIT_SIZE],
-                            (j + UINT_BIT_SIZE - 1 + (!j) * NUM_COLUMNS) % UINT_BIT_SIZE);
+        num_alive += getBit(stage[(num_lines - 1) * NUM_UINTS + (j - 1 + (!j) * NUM_COLUMNS) / UINT_BIT_SIZE],
+                            (j - 1 + (!j) * NUM_COLUMNS) % UINT_BIT_SIZE);
 
-        num_alive += getBit(stage[(num_lines - 1) * NUM_UINTS + (j + NUM_COLUMNS - 1) % NUM_COLUMNS / UINT_BIT_SIZE],
-                            (j + UINT_BIT_SIZE - 1 + (!j) * NUM_COLUMNS) % UINT_BIT_SIZE);
-        num_alive += getBit(stage[(num_lines - 1) * NUM_UINTS + j / UINT_BIT_SIZE],
+        num_alive += getBit(stage[(num_lines - 2) * NUM_UINTS + (j - 1 + (!j) * NUM_COLUMNS) / UINT_BIT_SIZE],
+                            (j - 1 + (!j) * NUM_COLUMNS) % UINT_BIT_SIZE);
+        num_alive += getBit(stage[(num_lines - 2) * NUM_UINTS + j / UINT_BIT_SIZE],
                             j % UINT_BIT_SIZE);
-        num_alive += getBit(stage[(num_lines - 1) * NUM_UINTS + (j + 1) / UINT_BIT_SIZE],
+        num_alive += getBit(stage[(num_lines - 2) * NUM_UINTS + (j + 1) * (j != NUM_COLUMNS - 1) / UINT_BIT_SIZE],
                             (j + 1) * (j != NUM_COLUMNS - 1) % UINT_BIT_SIZE);
 
-        num_alive += getBit(cells_down[(j + NUM_COLUMNS - 1) % NUM_COLUMNS / UINT_BIT_SIZE],
-                            (j + UINT_BIT_SIZE - 1 + (!j) * NUM_COLUMNS) % UINT_BIT_SIZE);
-        num_alive += getBit(cells_down[(j + NUM_COLUMNS - 1) % NUM_COLUMNS / UINT_BIT_SIZE],
-                            (j + UINT_BIT_SIZE - 1 + (!j) * NUM_COLUMNS) % UINT_BIT_SIZE);
-        num_alive += getBit(cells_down[(j + NUM_COLUMNS - 1) % NUM_COLUMNS / UINT_BIT_SIZE],
+        num_alive += getBit(cells_down[(j - 1 + (!j) * NUM_COLUMNS) / UINT_BIT_SIZE],
+                            (j - 1 + (!j) * NUM_COLUMNS) % UINT_BIT_SIZE);
+        num_alive += getBit(cells_down[j / UINT_BIT_SIZE],
+                            j % UINT_BIT_SIZE);
+        num_alive += getBit(cells_down[(j + 1) * (j != NUM_COLUMNS - 1) / UINT_BIT_SIZE],
                             (j +  1) * (j != NUM_COLUMNS - 1) % UINT_BIT_SIZE);
 
         u_int bit = getBit(stage[(num_lines - 1) * NUM_UINTS + j / UINT_BIT_SIZE], j % UINT_BIT_SIZE);
         if ((num_alive < 2 || num_alive > 3) && bit == 1) {
-            next_stage[(num_lines - 1) * NUM_UINTS + j / UINT_BIT_SIZE] = setBit(next_stage[(num_lines - 1) * NUM_UINTS + j / UINT_BIT_SIZE], j % UINT_BIT_SIZE, 0);
+            next_stage[(num_lines - 1) * NUM_UINTS + j / UINT_BIT_SIZE] = setBit(next_stage[(num_lines - 1) * NUM_UINTS + j / UINT_BIT_SIZE],
+                                                                                 j % UINT_BIT_SIZE, 0);
         }
         else if (num_alive == 3 && bit == 0) {
-            next_stage[(num_lines - 1) * NUM_UINTS + j / UINT_BIT_SIZE] = setBit(next_stage[(num_lines - 1) * NUM_UINTS + j / UINT_BIT_SIZE], j % UINT_BIT_SIZE, 1);
+            next_stage[(num_lines - 1) * NUM_UINTS + j / UINT_BIT_SIZE] = setBit(next_stage[(num_lines - 1) * NUM_UINTS + j / UINT_BIT_SIZE],
+                                                                                 j % UINT_BIT_SIZE, 1);
         }
         else {
-            next_stage[(num_lines - 1) * NUM_UINTS + j / UINT_BIT_SIZE] = setBit(next_stage[(num_lines - 1) * NUM_UINTS + j / UINT_BIT_SIZE], j % UINT_BIT_SIZE, bit);
+            next_stage[(num_lines - 1) * NUM_UINTS + j / UINT_BIT_SIZE] = setBit(next_stage[(num_lines - 1) * NUM_UINTS + j / UINT_BIT_SIZE],
+                                                                                 j % UINT_BIT_SIZE, bit);
         }
     }
 }
@@ -211,7 +220,6 @@ int main(int argc, char *argv[]) {
     u_int *stage = (u_int *)calloc(field_size, sizeof(u_int));
     u_int *next_stage = (u_int *)calloc(field_size, sizeof(u_int));
 
-
     double start_time = MPI_Wtime();
     u_int *full_field;
     if (rank == 0 ) {
@@ -227,52 +235,40 @@ int main(int argc, char *argv[]) {
     u_int *cells_up = (u_int *)calloc(NUM_UINTS, sizeof(u_int));
     u_int *cells_down = (u_int *)calloc(NUM_UINTS, sizeof(u_int));
 
-    /*for (int i = 0; i < NUM_LINES; i++) {
-        for (int j = 0; j < NUM_UINTS; j++) {
-            printUINT(stage[i * NUM_UINTS + j]);
-        }
-        std::cout << std::endl;
-    }*/
-    std::cout << std::endl;
     int current_iteration = 0;
-    int is_global_period = false;
-    while (current_iteration < MAX_ITERATION && !is_global_period) {
+    int is_global_period = 0;
+    while (current_iteration < MAX_ITERATION) {
         MPI_Request req_recv_up, req_recv_down;
         MPI_Irecv(cells_up, NUM_UINTS, MPI_UNSIGNED, (rank - 1 + size) % size, 0, MPI_COMM_WORLD, &req_recv_up);
-        MPI_Irecv(cells_down, NUM_UINTS, MPI_UNSIGNED, (rank + 1) % size, 0, MPI_COMM_WORLD, &req_recv_down);
+        MPI_Irecv(cells_down, NUM_UINTS, MPI_UNSIGNED, (rank + 1) % size, 1, MPI_COMM_WORLD, &req_recv_down);
 
         MPI_Request req_send[2];
-        MPI_Isend(stage, NUM_UINTS, MPI_UNSIGNED, (rank - 1 + size) % size, 0, MPI_COMM_WORLD, req_send);
+        MPI_Isend(stage, NUM_UINTS, MPI_UNSIGNED, (rank - 1 + size) % size, 1, MPI_COMM_WORLD, req_send);
         MPI_Isend(&stage[(strings_in_tasks[rank] - 1) * NUM_UINTS], NUM_UINTS, MPI_UNSIGNED, (rank + 1) % size, 0, MPI_COMM_WORLD, &req_send[1]);
 
         prev_stages[current_iteration] = (u_int *) calloc(field_size, sizeof(u_int));
         memcpy(prev_stages[current_iteration], stage, field_size * sizeof(u_int));
 
         calcNextStageCenter(stage, next_stage, strings_in_tasks[rank]);
-        MPI_Wait(&req_recv_up, NULL);
-        calcNextStageUp(stage, next_stage, strings_in_tasks[rank], cells_up);
-        MPI_Wait(&req_recv_down, NULL);
+        MPI_Wait(&req_recv_up, MPI_STATUS_IGNORE);
+        calcNextStageUp(stage, next_stage, cells_up);
+        MPI_Wait(&req_recv_down, MPI_STATUS_IGNORE);
         calcNextStageDown(stage, next_stage, strings_in_tasks[rank], cells_down);
 
         memcpy(stage, next_stage, field_size * sizeof(u_int));
-        /*for (int i = 0; i < NUM_LINES; i++) {
-            for (int j = 0; j < NUM_UINTS; j++) {
-                printUINT(stage[i * NUM_UINTS + j]);
-            }
-            std::cout << std::endl;
-        }*/
-        MPI_Waitall(2, req_send, NULL);
-        int period = false;
+        MPI_Waitall(2, req_send, MPI_STATUS_IGNORE);
+        int period = 0;
         for (int i = current_iteration; i > -1; i--) {
             if (checkPrevStage(prev_stages[i], stage, strings_in_tasks[rank])) {
-                period = true;
+                period = 1;
                 break;
             }
         }
-        MPI_Allreduce(&is_global_period, &period, 1, MPI_LOGICAL, MPI_LAND, MPI_COMM_WORLD);
+        is_global_period = 0;
+        MPI_Allreduce(&period, &is_global_period, 1, MPI_INT, MPI_SUM, MPI_COMM_WORLD);
         current_iteration += 1;
-        if (rank == 0) {
-            std::cerr << current_iteration << std::endl;
+        if (is_global_period == size) {
+            break;
         }
     }
     for (int i = 0; i < current_iteration; i++) {
@@ -283,7 +279,9 @@ int main(int argc, char *argv[]) {
     double end_time = MPI_Wtime();
 
     if (is_global_period && rank == 0) {
+        std::cout << "size = " << size << std::endl;
         std::cout << "Periodic" << std::endl;
+        std::cout << "Time taken: " << end_time - start_time << std::endl << std::endl;
     }
 
     free(stage);
