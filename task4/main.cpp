@@ -289,5 +289,6 @@ int main(int argc, char *argv[]) {
     free(strings_in_tasks);
     free(shifts);
     free(to_send);
+    MPI_Finalize();
     return 0;
 }
