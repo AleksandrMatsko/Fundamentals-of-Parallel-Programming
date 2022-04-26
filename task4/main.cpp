@@ -234,6 +234,8 @@ int main(int argc, char *argv[]) {
 
     u_int *cells_up = (u_int *)calloc(NUM_UINTS, sizeof(u_int));
     u_int *cells_down = (u_int *)calloc(NUM_UINTS, sizeof(u_int));
+    int period[MAX_ITERATION];
+    int global_period[MAX_ITERATION];
 
     int current_iteration = 0;
     int is_global_period = 0;
@@ -257,19 +259,27 @@ int main(int argc, char *argv[]) {
 
         memcpy(stage, next_stage, field_size * sizeof(u_int));
         MPI_Waitall(2, req_send, MPI_STATUS_IGNORE);
-        int period = 0;
+
         for (int i = current_iteration; i > -1; i--) {
             if (checkPrevStage(prev_stages[i], stage, strings_in_tasks[rank])) {
-                period = 1;
-                break;
+                period[i] = 1;
+            }
+            else {
+                period[i] = 0;
             }
         }
         is_global_period = 0;
-        MPI_Allreduce(&period, &is_global_period, 1, MPI_INT, MPI_SUM, MPI_COMM_WORLD);
-        current_iteration += 1;
+        MPI_Allreduce(&period, &global_period, MAX_ITERATION, MPI_INT, MPI_SUM, MPI_COMM_WORLD);
+        for (int i = current_iteration; i >= 0; i--) {
+            if (global_period[i] == size) {
+                is_global_period = global_period[i];
+                break;
+            }
+        }
         if (is_global_period == size) {
             break;
         }
+        current_iteration += 1;
     }
     for (int i = 0; i < current_iteration; i++) {
         free(prev_stages[i]);
