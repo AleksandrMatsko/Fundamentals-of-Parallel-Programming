@@ -252,11 +252,22 @@ int main(int argc, char *argv[]) {
         memcpy(prev_stages[current_iteration], stage, field_size * sizeof(u_int));
 
         calcNextStageCenter(stage, next_stage, strings_in_tasks[rank]);
-        MPI_Wait(&req_recv_up, MPI_STATUS_IGNORE);
-        calcNextStageUp(stage, next_stage, cells_up);
-        MPI_Wait(&req_recv_down, MPI_STATUS_IGNORE);
-        calcNextStageDown(stage, next_stage, strings_in_tasks[rank], cells_down);
-
+        bool up_done = false;
+        bool down_done = false;
+        int suc_up;
+        int suc_down;
+        while (!up_done || !down_done) {
+            MPI_Test(&req_recv_up, &suc_up, MPI_STATUS_IGNORE);
+            if (suc_up && !up_done) {
+                calcNextStageUp(stage, next_stage, cells_up);
+                up_done = true;
+            }
+            MPI_Test(&req_recv_down, &suc_down, MPI_STATUS_IGNORE);
+            if (suc_down && !down_done) {
+                calcNextStageDown(stage, next_stage, strings_in_tasks[rank], cells_down);
+                down_done = true;
+            }
+        }
         memcpy(stage, next_stage, field_size * sizeof(u_int));
         MPI_Waitall(2, req_send, MPI_STATUS_IGNORE);
 
@@ -269,7 +280,7 @@ int main(int argc, char *argv[]) {
             }
         }
         is_global_period = 0;
-        MPI_Allreduce(&period, &global_period, MAX_ITERATION, MPI_INT, MPI_SUM, MPI_COMM_WORLD);
+        MPI_Allreduce(&period, &global_period, current_iteration + 1, MPI_INT, MPI_SUM, MPI_COMM_WORLD);
         for (int i = current_iteration; i >= 0; i--) {
             if (global_period[i] == size) {
                 is_global_period = global_period[i];
