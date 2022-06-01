@@ -11,8 +11,8 @@ int TASK_MULTIPLIER = 1000;
 int TASKS_IN_PROCESS;
 
 const int STOP_CODE = -1;
-const int PERCENT = 25;
-const int MIN_TASK_SEND = 3;
+const int PERCENT = 40;
+const int MIN_TASK_SEND = 2;
 
 int left_task = 0;
 int right_task = 0;
@@ -31,18 +31,18 @@ void *answerTask(void *argument) {
     arguments_t parameters = *((arguments_t *)argument);
     int *tasks = parameters.tasks;
 
-    int asker_status;
+    int status_rank = 0;
 
     while (true) {
-        MPI_Recv(&asker_status, 1, MPI_INT, MPI_ANY_SOURCE, 0, MPI_COMM_WORLD, &status);
-        std::cerr << "Rank " << parameters.rank << ", receiver: " << asker_status << " asking for tasks" << std::endl;
-        if (asker_status == STOP_CODE) {
+        MPI_Recv(&status_rank, 1, MPI_INT, MPI_ANY_SOURCE, 0, MPI_COMM_WORLD, &status);
+        if (status_rank == STOP_CODE) {
             break;
         }
+
         int send_tasks = 0;
 
         pthread_mutex_lock(&task_mutex);
-        send_tasks = (right_task - left_task) * PERCENT / 100;
+        send_tasks = ((right_task - left_task) * PERCENT) / 100;
         if (send_tasks > MIN_TASK_SEND) {
             right_task -= send_tasks;
         }
@@ -80,7 +80,6 @@ void calculationTask(arguments_t *argument) {
     while (true) {
         int task_size = tasks[left_task % TASKS_IN_PROCESS];
         tasks[left_task % TASKS_IN_PROCESS] = 0;
-        std::cerr << "Rank " << rank << " " << left_task << " " << right_task << std::endl;
         left_task += 1;
         int remaining_tasks = right_task - left_task;
         pthread_mutex_unlock(&task_mutex);
@@ -90,7 +89,7 @@ void calculationTask(arguments_t *argument) {
             sum += sin(i);
         }
         if (sum >= task_size) {
-            std::cout << "wow" << std::endl;
+            std::cerr << "wow" << std::endl;
         }
 
         pthread_mutex_lock(&task_mutex);
@@ -98,18 +97,24 @@ void calculationTask(arguments_t *argument) {
             pthread_mutex_unlock(&task_mutex);
 
             int num_refused = 0;
+            int i = (rank + 1) % size;
 
-            for (int i = (rank + 1) % size; i % size != rank; i += 1) {
-                int asker_status = i % size;
-                MPI_Send(&asker_status, 1, MPI_INT, i % size, 0, MPI_COMM_WORLD);
-                int recv_tasks = 0;
-                MPI_Recv(&recv_tasks, 1, MPI_INT, i % size, 1, MPI_COMM_WORLD, &status);
-                if (recv_tasks != 0) {
-                    MPI_Recv(tasks_buffer, recv_tasks, MPI_INT, i % size, 1, MPI_COMM_WORLD, &status);
+
+            while (i != rank) {
+                int rank_to_ask = i % size;
+                if (rank_to_ask == rank) {
+                    continue;
+                }
+                MPI_Send(&rank_to_ask, 1, MPI_INT, rank_to_ask, 0, MPI_COMM_WORLD);
+                int recv_tasks = -1;
+                MPI_Recv(&recv_tasks, 1, MPI_INT, rank_to_ask, 1, MPI_COMM_WORLD, &status);
+                if (recv_tasks > 0) {
+                    MPI_Recv(tasks_buffer, recv_tasks, MPI_INT, rank_to_ask, 1, MPI_COMM_WORLD, &status);
                     int recv_after_first_send = 0;
                     MPI_Get_count(&status, MPI_INT, &recv_after_first_send);
                     if (recv_after_first_send < recv_tasks) {
-                        MPI_Recv(&tasks_buffer[recv_after_first_send], recv_tasks - recv_after_first_send, MPI_INT, i % size, 1, MPI_COMM_WORLD, &status);
+                        MPI_Recv(&tasks_buffer[recv_after_first_send], recv_tasks - recv_after_first_send,
+                                 MPI_INT, rank_to_ask, 1, MPI_COMM_WORLD, &status);
                     }
 
                     pthread_mutex_lock(&task_mutex);
@@ -129,9 +134,9 @@ void calculationTask(arguments_t *argument) {
                 else {
                     num_refused += 1;
                 }
+                i = (i + 1) % size;
             }
 
-            std::cerr << "Rank " << rank << " " << num_refused << std::endl;
 
             pthread_mutex_lock(&task_mutex);
             if (num_refused == size - 1) {
@@ -172,7 +177,7 @@ int main(int argc, char **argv) {
 
     if (0 != pthread_attr_setdetachstate(&attributes, PTHREAD_CREATE_JOINABLE)) {
         perror("Error in setting attributes");
-        exit(5);
+        exit(3);
     }
 
     TASKS_IN_PROCESS = TOTAL_TASK_NUM / size;
@@ -188,16 +193,15 @@ int main(int argc, char **argv) {
     pthread_t answerer;
     if (pthread_create(&answerer, &attributes, answerTask, &argument) != 0) {
         perror("Error in creating thread answerer");
-        exit(7);
+        exit(4);
     }
 
     pthread_attr_destroy(&attributes);
 
     for (int iteration = 0; iteration < MAX_ITERATIONS; iteration++) {
         for (int i = 0; i < TASKS_IN_PROCESS; i++) {
-            tasks[i] = abs(rank - (iteration % size)) * TASK_MULTIPLIER * (2 * TASKS_IN_PROCESS - i);
+            tasks[i] = abs(rank - (iteration % size)) * TASK_MULTIPLIER * 2 * TASKS_IN_PROCESS * size;
         }
-        std::cerr << "Rank " << rank << ", tasks initialized" << std::endl;
         MPI_Barrier(MPI_COMM_WORLD);
 
         double start = MPI_Wtime();
@@ -235,7 +239,7 @@ int main(int argc, char **argv) {
 
     if (pthread_join(answerer, NULL) != 0) {
         perror("Cannot join answerer");
-        exit(8);
+        exit(5);
     }
 
     pthread_mutex_destroy(&task_mutex);
